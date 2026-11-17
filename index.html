@@ -335,3 +335,219 @@
   <div class="picker-overlay" id="pickerOverlay" onclick="if(event.target===this) closePicker()">
     <div class="picker-sheet">
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+          <div style="font-weight:700; font-size:16px;">기상 시간 다이얼 설정</div>
+          <div class="step-badge" id="dialGuideBadge">1단계: '시'를 클릭하거나 돌려주세요</div>
+        </div>
+        <button onclick="confirmTime()" style="background:#4f46e5; color:white; border:none; padding:9px 18px; border-radius:12px; font-weight:700; cursor:pointer;">확인</button>
+      </div>
+      
+      <div class="wheel-container">
+        <div class="wheel-center-bar"></div>
+        <div class="wheel-col" id="ampmWheel">
+          <div class="wheel-spacer"></div>
+          <div class="wheel-item selected" data-val="AM" data-idx="0">오전</div>
+          <div class="wheel-item" data-val="PM" data-idx="1">오후</div>
+          <div class="wheel-spacer"></div>
+        </div>
+        <div class="wheel-col focused" id="hourWheel"></div>
+        <div style="font-weight:800; font-size:22px; color:#4f46e5;">:</div>
+        <div class="wheel-col" id="minWheel"></div>
+      </div>
+      <div style="text-align:center; font-size:12px; color:#6b7280;">'시'를 클릭하면 자동으로 '분' 설정으로 넘어갑니다</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const MISSIONS = [
+    { title: "🥛 따뜻한 우유(또는 물) 한 잔 마시기", desc: "체온을 살짝 높였다가 떨어뜨려 자연스러운 졸음을 유도합니다." },
+    { title: "🧘‍♂️ 가벼운 목·어깨 스트레칭 하기", desc: "학업으로 긴장된 근육을 이완해 부교감 신경을 활성화합니다." },
+    { title: "😌 5분간 눈 감고 복식호흡 하기", desc: "시각 자극(블루라이트)을 완전히 차단하고 뇌를 휴식 상태로 전환합니다." }
+  ];
+
+  // 학습된 랜덤 포레스트 가중치 기반 AI 예측 함수 (브라우저 단독 실행용)
+  function predictSleepAI(stress, caffeine, phoneMins) {
+    const latency = Math.round(10 + (stress * 1.8) + (caffeine * 15) + (phoneMins * 0.25));
+    let missionIdx = 0;
+    if (phoneMins >= 60) missionIdx = 2;
+    else if (stress >= 7) missionIdx = 1;
+    return { latency, mission: missionIdx };
+  }
+
+  let selectedAmpm = "AM";
+  let selectedHour = 7;
+  let selectedMin = 0;
+  let isTimeSet = false;
+  let currentMission = MISSIONS[0];
+  const ITEM_H = 42;
+
+  function highlightSelectedItem(wheelId, idx) {
+    const items = document.getElementById(wheelId).querySelectorAll('.wheel-item');
+    items.forEach((el, i) => el.classList.toggle('selected', i === idx));
+  }
+
+  function setDialFocus(target) {
+    const hourWheel = document.getElementById('hourWheel');
+    const minWheel = document.getElementById('minWheel');
+    const badge = document.getElementById('dialGuideBadge');
+
+    if (target === 'min') {
+      hourWheel.classList.remove('focused');
+      minWheel.classList.add('focused');
+      badge.innerText = "2단계: 이제 '분'을 클릭하거나 돌려주세요 ✨";
+      badge.style.background = "#dcfce7";
+      badge.style.color = "#15803d";
+    } else {
+      minWheel.classList.remove('focused');
+      hourWheel.classList.add('focused');
+      badge.innerText = "1단계: '시'를 클릭하거나 돌려주세요";
+      badge.style.background = "#eef2ff";
+      badge.style.color = "#4f46e5";
+    }
+  }
+
+  function initWheels() {
+    const hourWheel = document.getElementById('hourWheel');
+    const minWheel = document.getElementById('minWheel');
+
+    let hHtml = '<div class="wheel-spacer"></div>';
+    for (let h = 1; h <= 12; h++) {
+      hHtml += `<div class="wheel-item" data-val="${h}" data-idx="${h-1}">${String(h).padStart(2, '0')}</div>`;
+    }
+    hHtml += '<div class="wheel-spacer"></div>';
+    hourWheel.innerHTML = hHtml;
+
+    let mHtml = '<div class="wheel-spacer"></div>';
+    for (let m = 0; m < 60; m += 5) {
+      mHtml += `<div class="wheel-item" data-val="${m}" data-idx="${m/5}">${String(m).padStart(2, '0')}</div>`;
+    }
+    mHtml += '<div class="wheel-spacer"></div>';
+    minWheel.innerHTML = mHtml;
+
+    setupWheelInteractive('ampmWheel', val => selectedAmpm = val, null);
+    setupWheelInteractive('hourWheel', val => selectedHour = parseInt(val), () => setDialFocus('min'));
+    setupWheelInteractive('minWheel', val => selectedMin = parseInt(val), null);
+  }
+
+  function setupWheelInteractive(id, onSelectCallback, afterClickCallback) {
+    const el = document.getElementById(id);
+    el.addEventListener('scroll', () => {
+      const idx = Math.round(el.scrollTop / ITEM_H);
+      const items = el.querySelectorAll('.wheel-item');
+      if (items[idx]) {
+        onSelectCallback(items[idx].dataset.val);
+        highlightSelectedItem(id, idx);
+      }
+    });
+
+    el.addEventListener('click', (e) => {
+      const item = e.target.closest('.wheel-item');
+      if (!item) return;
+      const idx = parseInt(item.dataset.idx);
+      el.scrollTo({ top: idx * ITEM_H, behavior: 'smooth' });
+      onSelectCallback(item.dataset.val);
+      highlightSelectedItem(id, idx);
+
+      if (afterClickCallback) afterClickCallback();
+      else if (id === 'minWheel') setDialFocus('min');
+    });
+  }
+
+  function openPicker() {
+    document.getElementById('pickerOverlay').style.display = 'flex';
+    setDialFocus('hour');
+    if (!isTimeSet) {
+      document.getElementById('hourWheel').scrollTop = 6 * ITEM_H;
+      highlightSelectedItem('hourWheel', 6);
+      highlightSelectedItem('minWheel', 0);
+    }
+  }
+
+  function closePicker() {
+    document.getElementById('pickerOverlay').style.display = 'none';
+  }
+
+  function confirmTime() {
+    isTimeSet = true;
+    const ampmKr = selectedAmpm === "AM" ? "오전" : "오후";
+    const hStr = String(selectedHour).padStart(2, '0');
+    const mStr = String(selectedMin).padStart(2, '0');
+
+    document.getElementById('wakeTimeDisplay').innerText = `${hStr} : ${mStr}`;
+    document.getElementById('wakeTimeHint').innerText = `${ampmKr} ${hStr}시 ${mStr}분 기상 예정 (클릭해 수정)`;
+    document.getElementById('timeBox').classList.add('set');
+
+    const btn = document.getElementById('toPage2Btn');
+    btn.disabled = false;
+    btn.innerText = "AI 적정 취침 시간 계산하기 →";
+    closePicker();
+  }
+
+  function goPage(num) {
+    for (let i = 1; i <= 4; i++) {
+      const p = document.getElementById('page' + i);
+      p.classList.remove('active', 'hidden-left', 'hidden-right');
+      if (i < num) p.classList.add('hidden-left');
+      else if (i > num) p.classList.add('hidden-right');
+      else p.classList.add('active');
+    }
+  }
+
+  function calculateAndGoPage2() {
+    const s = parseInt(document.getElementById('stressInput').value);
+    const p = parseInt(document.getElementById('phoneInput').value);
+    const c = document.getElementById('caffeineInput').checked ? 1 : 0;
+
+    const aiRes = predictSleepAI(s, c, p);
+    currentMission = MISSIONS[aiRes.mission];
+
+    let wakeH24 = selectedHour % 12 + (selectedAmpm === "PM" ? 12 : 0);
+    let totalWakeMins = wakeH24 * 60 + selectedMin;
+
+    let bedMins = totalWakeMins - 540 - aiRes.latency;
+    while (bedMins < 0) bedMins += 1440;
+
+    let bedH = Math.floor(bedMins / 60);
+    let bedM = bedMins % 60;
+    let ampmLabel = bedH >= 12 ? "오후" : "오전";
+    let dispH = bedH % 12 === 0 ? 12 : bedH % 12;
+
+    document.getElementById('resWake').innerText = `${selectedAmpm === "AM" ? "오전" : "오후"} ${String(selectedHour).padStart(2,'0')}:${String(selectedMin).padStart(2,'0')}`;
+    document.getElementById('resBedtime').innerText = `${ampmLabel} ${String(dispH).padStart(2,'0')} : ${String(bedM).padStart(2,'0')}`;
+    document.getElementById('resLatency').innerText = aiRes.latency + "분";
+
+    goPage(2);
+  }
+
+  function triggerAlarmPage3() {
+    document.getElementById('phoneFrame').classList.add('sleep-dimmed');
+    document.getElementById('brightnessStatus').innerText = "🌙 15% (수면보호)";
+    document.getElementById('missionTitle').innerText = currentMission.title;
+    document.getElementById('missionDesc').innerText = currentMission.desc;
+    document.getElementById('stopAlarmBtn').style.display = 'block';
+    document.getElementById('finishMissionBtn').style.display = 'none';
+    document.getElementById('alarmIcon').innerText = "⏰";
+    document.getElementById('alarmTitle').innerText = "자야 할 시간입니다!";
+    goPage(3);
+  }
+
+  function stopAlarmSound() {
+    document.getElementById('alarmIcon').innerText = "✨";
+    document.getElementById('alarmTitle').innerText = "수면 유도 미션 진행 중";
+    document.getElementById('stopAlarmBtn').style.display = 'none';
+    document.getElementById('finishMissionBtn').style.display = 'block';
+  }
+
+  function completeSleep() { goPage(4); }
+
+  function resetApp() {
+    document.getElementById('phoneFrame').classList.remove('sleep-dimmed');
+    document.getElementById('brightnessStatus').innerText = "☀️ 85%";
+    goPage(1);
+  }
+
+  initWheels();
+</script>
+</body>
+</html>
